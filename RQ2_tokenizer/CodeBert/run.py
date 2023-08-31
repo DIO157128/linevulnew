@@ -4,8 +4,9 @@ if __name__ =="__main__":
     os.system("python codebert_main.py \
   --output_dir=../results/saved_models \
   --model_type=roberta \
-  --do_train \
   --use_word_level_tokenizer \
+  --do_train \
+  --do_test \
   --train_data_file=../../data/big-vul_dataset/train.csv \
   --eval_data_file=../../data/big-vul_dataset/val.csv \
   --test_data_file=../../data/big-vul_dataset/test.csv \
@@ -19,24 +20,4 @@ if __name__ =="__main__":
   --model_name codebert.bin \
   --n_gpu 1\
   --seed 123456  2>&1 | tee train.log")
-    #line
-    os.system("python codebert_main.py \
-    --use_word_level_tokenizer\
-  --do_sorting_by_line_scores \
-  --effort_at_top_k=0.2 \
-  --top_k_recall_by_lines=0.01 \
-  --top_k_recall_by_pred_prob=0.2 \
-  --model_name=codebert.bin \
-  --output_dir=../results/saved_models \
-  --model_type=roberta \
-  --do_test \
-  --do_local_explanation \
-  --top_k_constant=10 \
-  --reasoning_method=attention \
-  --train_data_file=../../data/big-vul_dataset/train.csv \
-  --eval_data_file=../../data/big-vul_dataset/val.csv \
-  --test_data_file=../../data/big-vul_dataset/test.csv \
-  --block_size 512 \
-  --n_gpu 2\
-  --eval_batch_size 512")
 

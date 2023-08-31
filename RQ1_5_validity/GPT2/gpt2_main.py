@@ -27,12 +27,11 @@ import torch
 from torch.utils.data import DataLoader, Dataset, SequentialSampler, RandomSampler,TensorDataset
 from torch.utils.data.distributed import DistributedSampler
 from transformers import (WEIGHTS_NAME, AdamW, get_linear_schedule_with_warmup,
-                          RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer, T5ForConditionalGeneration,
-                          T5Config, PLBartConfig, PLBartTokenizer, PLBartForSequenceClassification,
-                          PLBartForConditionalGeneration)
+                          RobertaConfig, RobertaForSequenceClassification, RobertaTokenizer, GPT2Config, GPT2Tokenizer,
+                          GPT2ForSequenceClassification)
 from tqdm import tqdm
 import multiprocessing
-from plbart_model import Model
+from linevul_model import Model
 import pandas as pd
 # metrics
 from sklearn.metrics import accuracy_score, recall_score, precision_score, f1_score
@@ -90,18 +89,18 @@ def convert_examples_to_features(func, label, tokenizer, args):
         encoded = encoded.ids
         if len(encoded) > 510:
             encoded = encoded[:510]
-        encoded.insert(0, 0)
-        encoded.append(2)
+        encoded.insert(0, 50256)
+        encoded.append(50256)
         if len(encoded) < 512:
             padding = 512 - len(encoded)
             for _ in range(padding):
-                encoded.append(1)
+                encoded.append(50257)
         source_ids = encoded
         source_tokens = []
         return InputFeatures(source_tokens, source_ids, label)
     # source
     code_tokens = tokenizer.tokenize(str(func))[:args.block_size-2]
-    source_tokens = [tokenizer.cls_token] + code_tokens + [tokenizer.sep_token]
+    source_tokens = [tokenizer.bos_token] + code_tokens + [tokenizer.eos_token]
     source_ids = tokenizer.convert_tokens_to_ids(source_tokens)
     padding_length = args.block_size - len(source_ids)
     source_ids += [tokenizer.pad_token_id] * padding_length
@@ -242,6 +241,7 @@ def evaluate(args, model, tokenizer, eval_dataset, eval_when_training=False):
     best_threshold = 0.5
     best_f1 = 0
     y_preds = logits[:,1]>best_threshold
+
     recall = recall_score(y_trues, y_preds)
     precision = precision_score(y_trues, y_preds)   
     f1 = f1_score(y_trues, y_preds)             
@@ -276,7 +276,7 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
     model.eval()
     logits=[]  
     y_trues=[]
-    for batch in tqdm(test_dataloader):
+    for batch in test_dataloader:
         (inputs_ids, labels) = [x.to(args.device) for x in batch]
         with torch.no_grad():
             lm_loss, logit = model(input_ids=inputs_ids, labels=labels)
@@ -290,8 +290,8 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
     y_preds = logits[:, 1] > best_threshold
     acc = accuracy_score(y_trues, y_preds)
     recall = recall_score(y_trues, y_preds)
-    precision = precision_score(y_trues, y_preds)   
-    f1 = f1_score(y_trues, y_preds)             
+    precision = precision_score(y_trues, y_preds)
+    f1 = f1_score(y_trues, y_preds)
     result = {
         "test_accuracy": float(acc),
         "test_recall": float(recall),
@@ -299,7 +299,7 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
         "test_f1": float(f1),
         "test_threshold":best_threshold,
     }
-    f = open("../results/plbart/func_res.txt", "a")
+    f = open("../results/gpt2/func_res.txt", "a")
     for key in sorted(result.keys()):
         f.write(key+"="+str(round(result[key],4))+"\n")
     logits = [l[1] for l in logits]
@@ -408,7 +408,7 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
                 index += 1
 
             # write IFA records for IFA Boxplot
-            with open(f"../results/ifa_records/plbart_ifa_{reasoning_method}.txt", "w+") as f:
+            with open(f"../results/ifa_records/gpt2_ifa_{reasoning_method}.txt", "w+") as f:
                 f.write(str(ifa_records))
             # write Top-10 Acc records for Top-10 Accuracy Boxplot
             # todo
@@ -422,13 +422,15 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
             logger.info(f"NA Eval Results (Out of 512 Tokens): {na_eval_results_512}")
             logger.info(f"NA Defective Data Point: {na_defective_data_point}")
 
-            line_level_results = [{
-                                f"plbart_{reasoning_method}_top10_accuracy":
+            line_level_results = [{f"gpt2_{reasoning_method}_top20%_recall":
+                                [round(total_correctly_predicted_flaw_lines[i] / total_flaw_lines, 2) * 100 for i in range(len(top_k_locs))],
+                                f"gpt2_{reasoning_method}_top10_accuracy":
                                 [round(total_correctly_localized_function[i] / total_function, 2) * 100 for i in range(len(top_k_constant))],
-                                f"plbart_{reasoning_method}_ifa":
+                                f"gpt2_{reasoning_method}_ifa":
                                 round(total_min_clean_lines_inspected / total_function, 2),
-
-                                f"plbart_{reasoning_method}_total_effort":
+                                f"gpt2_{reasoning_method}_recall@topk%loc_auc":
+                                auc(x=top_k_locs, y=[round(total_correctly_predicted_flaw_lines[i] / total_flaw_lines, 2) for i in range(len(top_k_locs))]),
+                                f"gpt2_{reasoning_method}_total_effort":
                                 round(total_max_clean_lines_inspected / sum_total_lines, 2),
                                 "avg_line_in_one_func": 
                                 int(sum_total_lines / total_function),
@@ -443,7 +445,7 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
             logger.info("***** Line Level Result *****")
             logger.info(line_level_results)
             # output results
-            with open("../results/graphcodebert/local_explanation.txt", "a") as f:
+            with open("../results/gpt2/local_explanation.txt", "a") as f:
                for key in sorted(line_level_results[0].keys()):
                    f.write(key+"="+str(line_level_results[0][key])+"\n")
 
@@ -472,7 +474,7 @@ def generate_result_df(logits, y_trues, y_preds, args):
 def write_raw_preds_csv(args, y_preds):
     df = pd.read_csv(args.test_data_file)
     df["raw_preds"] = y_preds
-    df.to_csv("../results/plbart/raw_preds.csv", index=False)
+    df.to_csv("../results/gpt2/raw_preds.csv", index=False)
 
 def get_num_lines(func):
     func = func.split("\n")
@@ -644,7 +646,7 @@ def line_level_localization_tp(flaw_lines: str, tokenizer, model, mini_batch, or
         return results
     else:
         if write_invalid_data:
-            with open("../results/invalid_data/plbart_invalid_line_lev_data.txt", "a") as f:
+            with open("../results/invalid_data/gpt2_invalid_line_lev_data.txt", "a") as f:
                 f.writelines("--- ALL TOKENS ---")
                 f.writelines("\n")
                 alltok = ''.join(all_tokens)
@@ -912,7 +914,7 @@ def main():
                         help="Top-K Accuracy constant")
     # num of attention heads
     parser.add_argument('--num_attention_heads', type=int, default=12,
-                        help="number of attention heads used in plbart")
+                        help="number of attention heads used in CodeBERT")
     # raw predictions
     parser.add_argument("--write_raw_preds", default=False, action='store_true',
                             help="Whether to write raw predictions on test data.")
@@ -933,11 +935,14 @@ def main():
     logger.warning("device: %s, n_gpu: %s",device, args.n_gpu,)
     # Set seed
     set_seed(args)
-    config = PLBartConfig.from_pretrained("uclanlp/plbart-base")
-    config.num_attention_heads = args.num_attention_heads
-    tokenizer = PLBartTokenizer.from_pretrained("uclanlp/plbart-base")
-    model = PLBartForSequenceClassification.from_pretrained("uclanlp/plbart-base")
-    model = Model(model, config,args)
+    config = GPT2Config.from_pretrained("microsoft/CodeGPT-small-java-adaptedGPT2")
+    config.pad_token_id = 50257
+    tokenizer = GPT2Tokenizer.from_pretrained('microsoft/CodeGPT-small-java-adaptedGPT2')
+    tokenizer.add_tokens(["<pad>"])
+    tokenizer.pad_token = "<pad>"
+    model = GPT2ForSequenceClassification.from_pretrained("microsoft/CodeGPT-small-java-adaptedGPT2", config=config, ignore_mismatched_sizes=True)
+    model.resize_token_embeddings(len(tokenizer))
+    model = Model(model, config, tokenizer, args)
     logger.info("Training/evaluation parameters %s", args)
     # Training
     if args.do_train:

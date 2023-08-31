@@ -934,10 +934,10 @@ def main():
     logger.warning("device: %s, n_gpu: %s",device, args.n_gpu,)
     # Set seed
     set_seed(args)
-    config = GPT2Config.from_pretrained("gpt2")
+    config = GPT2Config.from_pretrained("microsoft/CodeGPT-small-java-adaptedGPT2")
     config.pad_token_id = 50257
     tokenizer = Tokenizer.from_file('./gpt2.json')
-    model = GPT2ForSequenceClassification.from_pretrained("gpt2", config=config, ignore_mismatched_sizes=True)
+    model = GPT2ForSequenceClassification.from_pretrained("microsoft/CodeGPT-small-java-adaptedGPT2", config=config, ignore_mismatched_sizes=True)
     model.resize_token_embeddings(50258)
     model = Model(model, config, tokenizer, args)
     logger.info("Training/evaluation parameters %s", args)

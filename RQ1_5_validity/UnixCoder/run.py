@@ -4,7 +4,6 @@ if __name__ =="__main__":
     os.system("python unixcoder_main.py \
   --output_dir=../results/saved_models \
   --model_type=roberta \
-  --use_word_level_tokenizer \
   --do_train \
   --do_test \
   --train_data_file=../../data/big-vul_dataset/train.csv \
@@ -16,10 +15,10 @@ if __name__ =="__main__":
   --eval_batch_size 16 \
   --learning_rate 2e-5 \
   --max_grad_norm 1.0 \
+  --do_local_explanation \
+  --top_k_constant=10 \
+  --reasoning_method=attention \
   --evaluate_during_training \
   --model_name unixcoder.bin \
   --n_gpu 1\
   --seed 123456  2>&1 | tee train.log")
-
-
-
