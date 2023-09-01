@@ -64,7 +64,7 @@ class TextDataset(Dataset):
         self.examples = []
         df = pd.read_csv(file_path)
         funcs = df["processed_func"].tolist()
-        labels = df["target"].tolist()
+        labels = df["CWE ID Label"].tolist()
         for i in tqdm(range(len(funcs))):
             self.examples.append(convert_examples_to_features(funcs[i], labels[i], tokenizer, args))
         if file_type == "train":
@@ -272,8 +272,9 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
     eval_loss = 0.0
     nb_eval_steps = 0
     model.eval()
-    logits=[]  
-    y_trues=[]
+    logits = []
+    y_trues = []
+
     for batch in test_dataloader:
         (inputs_ids, labels) = [x.to(args.device) for x in batch]
         with torch.no_grad():
@@ -285,11 +286,11 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
     # calculate scores
     logits = np.concatenate(logits, 0)
     y_trues = np.concatenate(y_trues, 0)
-    y_preds = logits[:, 1] > best_threshold
+    y_preds = np.argmax(logits, axis=1)
     acc = accuracy_score(y_trues, y_preds)
-    recall = recall_score(y_trues, y_preds)
-    precision = precision_score(y_trues, y_preds)
-    f1 = f1_score(y_trues, y_preds)
+    recall = recall_score(y_trues, y_preds, average='macro')
+    precision = precision_score(y_trues, y_preds, average='macro')
+    f1 = f1_score(y_trues, y_preds, average='macro')
     result = {
         "test_accuracy": float(acc),
         "test_recall": float(recall),
@@ -436,8 +437,8 @@ def test(args, model, tokenizer, test_dataset, best_threshold=0.5):
                                 total_function,
                                 "all_top_10_correct_idx": all_top_10_correct_idx,
                                 "all_top_10_not_correct_idx": all_top_10_not_correct_idx,
-                                   f"apfd_{reasoning_method}":apfd,
-                                   f"average_apfd_{reasoning_method}":sum(apfd)/total_function}
+                                   "apfd":apfd,
+                                   "average_apfd":sum(apfd)/total_function}
                                   ]
 
             logger.info("***** Line Level Result *****")
@@ -631,77 +632,7 @@ def line_level_localization_tp(flaw_lines: str, tokenizer, model, mini_batch, or
             total_lines, num_of_flaw_lines, all_correctly_predicted_flaw_lines, min_clean_lines_inspected, max_clean_lines_inspected, all_correctly_localized_func, top_10_correct_idx, top_10_not_correct_idx,apfd \
             = \
             line_level_evaluation(all_lines_score=all_lines_score, flaw_line_indices=flaw_line_indices, top_k_loc=top_k_loc, top_k_constant=top_k_constant, true_positive_only=True, index=index)
-        elif reasoning_method == "lig":
-            ref_token_id, sep_token_id, cls_token_id = tokenizer.pad_token_id, tokenizer.sep_token_id, tokenizer.cls_token_id
-            ref_input_ids = create_ref_input_ids(input_ids, ref_token_id, sep_token_id, cls_token_id)
-            # send data to device
-            input_ids = input_ids.to(args.device)
-            labels = labels.to(args.device)
-            ref_input_ids = ref_input_ids.to(args.device)
-            lig = LayerIntegratedGradients(lig_forward, model.encoder.roberta.embeddings)
-            attributions, delta = lig.attribute(inputs=input_ids,
-                                                baselines=ref_input_ids,
-                                                internal_batch_size=32,
-                                                return_convergence_delta=True)
-            score = predict(input_ids)
-            pred_idx = torch.argmax(score).cpu().numpy()
-            pred_prob = score[pred_idx]
-            attributions_sum = summarize_attributions(attributions)
-            attr_scores = attributions_sum.tolist()
-            # each token should have one score
-            assert len(all_tokens) == len(attr_scores)
-            # store tokens and attr scores together in a list of tuple [(token, attr_score)]
-            word_attr_scores = get_word_att_scores(all_tokens=all_tokens, att_scores=attr_scores)
-            # remove <s>, </s>, <unk>, <pad>
-            word_attr_scores = clean_word_attr_scores(word_attr_scores=word_attr_scores)
-            all_lines_score, flaw_line_indices = get_all_lines_score(word_attr_scores, verified_flaw_lines)
-            # return if no flaw lines exist
-            if len(flaw_line_indices) == 0:
-                return "NA"
-            total_lines, num_of_flaw_lines, all_correctly_predicted_flaw_lines, min_clean_lines_inspected, max_clean_lines_inspected, all_correctly_localized_func, top_10_correct_idx, top_10_not_correct_idx,apfd \
-             = \
-            line_level_evaluation(all_lines_score=all_lines_score, flaw_line_indices=flaw_line_indices, top_k_loc=top_k_loc, top_k_constant=top_k_constant, true_positive_only=True, index=index)
-        elif reasoning_method == "deeplift" or \
-             reasoning_method == "deeplift_shap" or \
-             reasoning_method == "gradient_shap" or \
-             reasoning_method == "saliency":
-            # send data to device
-            input_ids = input_ids.to(args.device)
-            input_embed = model.encoder.roberta.embeddings(input_ids).to(args.device)
-            if reasoning_method == "deeplift":
-                #baselines = torch.randn(1, 512, 768, requires_grad=True).to(args.device)
-                baselines = torch.zeros(1, 512, 768, requires_grad=True).to(args.device)
-                reasoning_model = DeepLift(model)
-            elif reasoning_method == "deeplift_shap":
-                #baselines = torch.randn(16, 512, 768, requires_grad=True).to(args.device)
-                baselines = torch.zeros(16, 512, 768, requires_grad=True).to(args.device)
-                reasoning_model = DeepLiftShap(model)
-            elif reasoning_method == "gradient_shap":
-                #baselines = torch.randn(16, 512, 768, requires_grad=True).to(args.device)
-                baselines = torch.zeros(16, 512, 768, requires_grad=True).to(args.device)
-                reasoning_model = GradientShap(model)
-            elif reasoning_method == "saliency":
-                reasoning_model = Saliency(model)
-            # attributions -> [1, 512, 768]
-            if reasoning_method == "saliency":
-                attributions = reasoning_model.attribute(input_embed, target=1)
-            else:
-                attributions = reasoning_model.attribute(input_embed, baselines=baselines, target=1)
-            attributions_sum = summarize_attributions(attributions)
-            attr_scores = attributions_sum.tolist()
-            # each token should have one score
-            assert len(all_tokens) == len(attr_scores)
-            # store tokens and attr scores together in a list of tuple [(token, attr_score)]
-            word_attr_scores = get_word_att_scores(all_tokens=all_tokens, att_scores=attr_scores)
-            # remove <s>, </s>, <unk>, <pad>
-            word_attr_scores = clean_word_attr_scores(word_attr_scores=word_attr_scores)
-            all_lines_score, flaw_line_indices = get_all_lines_score(word_attr_scores, verified_flaw_lines)
-            # return if no flaw lines exist
-            if len(flaw_line_indices) == 0:
-                return "NA"
-            total_lines, num_of_flaw_lines, all_correctly_predicted_flaw_lines, min_clean_lines_inspected, max_clean_lines_inspected, all_correctly_localized_func, top_10_correct_idx, top_10_not_correct_idx,apfd \
-             = \
-            line_level_evaluation(all_lines_score=all_lines_score, flaw_line_indices=flaw_line_indices, top_k_loc=top_k_loc, top_k_constant=top_k_constant, true_positive_only=True, index=index)
+      
         results = {"total_lines": total_lines,
                     "num_of_flaw_lines": num_of_flaw_lines,
                     "all_correctly_predicted_flaw_lines": all_correctly_predicted_flaw_lines,
