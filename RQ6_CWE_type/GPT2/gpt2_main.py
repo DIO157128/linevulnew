@@ -50,7 +50,7 @@ class TextDataset(Dataset):
         df = pd.read_csv(file_path)
         funcs = df["processed_func"].tolist()
         labels = df["CWE ID Label"].tolist()
-        for i in tqdm(range(100)):
+        for i in tqdm(range(len(funcs))):
             label = [0 for i in range(args.num_labels)]
             label[labels[i]] = 1
             self.examples.append(convert_examples_to_features(funcs[i], label, tokenizer, args))
