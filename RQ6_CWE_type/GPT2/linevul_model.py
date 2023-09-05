@@ -34,7 +34,9 @@ class Model(torch.nn.Module):
         prob = torch.softmax(pooled_logits, dim=-1)
         if labels is not None:
             loss_fct = CrossEntropyLoss()
-            loss = loss_fct(pooled_logits.view(-1, 2), labels.view(-1))
+            a = pooled_logits.view(-1, 2)
+            b = labels.view(-1)
+            loss = loss_fct(pooled_logits.view(-1, self.args.num_labels), labels.view(-1))
             return loss, prob
         else:
             return prob

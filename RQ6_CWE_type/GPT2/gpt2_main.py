@@ -50,7 +50,7 @@ class TextDataset(Dataset):
         df = pd.read_csv(file_path)
         funcs = df["processed_func"].tolist()
         labels = df["CWE ID Label"].tolist()
-        for i in tqdm(range(len(funcs))):
+        for i in tqdm(range(100)):
             label = [0 for i in range(args.num_labels)]
             label[labels[i]] = 1
             self.examples.append(convert_examples_to_features(funcs[i], label, tokenizer, args))
@@ -248,7 +248,7 @@ def test(args, model, tokenizer, test_dataset):
     df['processed_func'] = funcs
     df["CWE ID Label"] = y_trues
     df['raw_prediction'] = y_preds
-    df.to_csv('../results/vgpt/raw_preds.csv')
+    df.to_csv('../results/gpt/raw_preds.csv')
     logger.info("***** Test results *****")
     for key in sorted(result.keys()):
         logger.info("  %s = %s", key, str(round(result[key],4)))
