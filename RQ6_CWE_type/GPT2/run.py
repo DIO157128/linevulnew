@@ -5,11 +5,12 @@ if __name__ =="__main__":
   --output_dir=../results/saved_models \
   --model_type=roberta \
   --do_train \
+  --num_labels 10\
   --do_test \
   --train_data_file=../../data/big-vul_dataset/cwe_train.csv \
   --eval_data_file=../../data/big-vul_dataset/cwe_val.csv \
   --test_data_file=../../data/big-vul_dataset/cwe_test.csv \
-  --epochs 10 \
+  --epochs 60 \
   --block_size 512 \
   --train_batch_size 16 \
   --eval_batch_size 16 \

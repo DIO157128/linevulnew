@@ -5,11 +5,11 @@ from transformers import RobertaForSequenceClassification
 
 class RobertaClassificationHead(nn.Module):
     """Head for sentence-level classification tasks."""
-    def __init__(self, config):
+    def __init__(self, config, num_labels):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.out_proj = nn.Linear(config.hidden_size, 10)
+        self.out_proj = nn.Linear(config.hidden_size, num_labels)
 
     def forward(self, features, **kwargs):
         x = features[:, 0, :]  # take <s> token (equiv. to [CLS])
@@ -25,36 +25,19 @@ class Model(RobertaForSequenceClassification):
         super(Model, self).__init__(config=config)
         self.encoder = encoder
         self.tokenizer = tokenizer
-        self.classifier = RobertaClassificationHead(config)
+        self.classifier = RobertaClassificationHead(config, args.num_labels)
         self.args = args
     
-        
-    def forward(self, input_embed=None, labels=None, output_attentions=False, input_ids=None):
-        if output_attentions:
-            if input_ids is not None:
-                outputs = self.encoder.roberta(input_ids, attention_mask=input_ids.ne(1), output_attentions=output_attentions)
+    def forward(self, input_ids, labels=None, logit_adjustment=None, focal_loss=False):
+        outputs = self.encoder(input_ids, attention_mask=input_ids.ne(self.tokenizer.pad_token_id)).last_hidden_state
+        logits = self.classifier(outputs)
+        prob = torch.softmax(logits, dim=-1)
+        if labels is not None:
+            if logit_adjustment is not None:
+                logits = logits + logit_adjustment
             else:
-                outputs = self.encoder.roberta(inputs_embeds=input_embed, output_attentions=output_attentions)
-            attentions = outputs.attentions
-            last_hidden_state = outputs.last_hidden_state
-            logits = self.classifier(last_hidden_state)
-            prob = torch.softmax(logits, dim=-1)
-            if labels is not None:
                 loss_fct = CrossEntropyLoss()
                 loss = loss_fct(logits, labels)
-                return loss, prob, attentions
-            else:
-                return prob, attentions
+            return loss, prob
         else:
-            if input_ids is not None:
-                outputs = self.encoder.roberta(input_ids, attention_mask=input_ids.ne(1), output_attentions=output_attentions)[0]
-            else:
-                outputs = self.encoder.roberta(inputs_embeds=input_embed, output_attentions=output_attentions)[0]
-            logits = self.classifier(outputs)
-            prob = torch.softmax(logits, dim=-1)
-            if labels is not None:
-                loss_fct = CrossEntropyLoss()
-                loss = loss_fct(logits, labels)
-                return loss, prob
-            else:
-                return prob
+            return prob
